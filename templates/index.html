@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Bản đồ tìm đường & quản lý tuyến ngập</title>
+
+    <!-- Leaflet -->
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <!-- CSS -->
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='style.css') }}"
+    />
+  </head>
+  <body>
+    <div id="container">
+      <!-- Bảng điều khiển bên trái -->
+      <div id="sidebar">
+        <h2>Bảng điều khiển</h2>
+
+        <label><b>Chế độ hoạt động:</b></label>
+        <select id="modeSelect">
+          <option value="user">Tìm đường đi</option>
+          <option value="admin">Thêm tuyến ngập/tắc</option>
+        </select>
+
+        <button id="clearBtn">🧹 Xóa điểm đã chọn</button>
+        <hr />
+
+        <h3>Danh sách tuyến ngập</h3>
+        <ul id="blockedList">
+          Chưa có tuyến nào.
+        </ul>
+      </div>
+
+      <!-- Bản đồ -->
+      <div id="map"></div>
+    </div>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+  </body>
+</html>

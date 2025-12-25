@@ -3,55 +3,156 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Bản đồ tìm đường & quản lý tuyến ngập</title>
+    <title>Tìm đường đi để cứu hộ- Hạ Đình</title>
 
-    <!-- Leaflet -->
     <link
       rel="stylesheet"
       href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""
     />
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-    <!-- CSS -->
     <link
       rel="stylesheet"
       href="{{ url_for('static', filename='style.css') }}"
     />
   </head>
   <body>
-    <div id="container">
-      <!-- Bảng điều khiển bên trái -->
-      <div id="sidebar">
-        <h2>Bảng điều khiển</h2>
+    <div class="layout">
+      <aside class="sidebar">
+        <h1>📍 Tìm đường né điểm ngập</h1>
 
-        <label><b>Chế độ hoạt động:</b></label>
-        <select id="modeSelect">
-          <option value="user">Tìm đường đi</option>
-          <option value="admin">Thêm tuyến ngập/tắc</option>
-        </select>
+        <section>
+          <p class="hint">
+            <strong>Khu vực:</strong> Hạ Đình, Thanh Xuân.<br />
+            Sử dụng dữ liệu đồ thị trọng số để tự động né các đoạn đường bị đánh
+            dấu ngập.
+          </p>
+          <button id="load-map-btn" class="secondary" style="width: 100%">
+            🔄 Tải lại bản đồ
+          </button>
+        </section>
 
-        <label id="levelWrap" style="display: none; margin-top: 10px">
-          <b>Mức độ ngập/tắc:</b>
-          <select id="levelSelect">
-            <option value="heavy">Nặng</option>
-            <option value="medium">Vừa</option>
-            <option value="light">Nhẹ</option>
+        <section class="selection">
+          <h2>1. Thiết lập lộ trình</h2>
+          <div class="selection-buttons">
+            <button
+              id="btn-start"
+              class="mode-btn active"
+              data-mode="start"
+              onclick="setSelectionMode('start')"
+            >
+              🟢 Chọn điểm đi (S)
+            </button>
+            <button
+              id="btn-goal"
+              class="mode-btn"
+              data-mode="goal"
+              onclick="setSelectionMode('goal')"
+            >
+              🔴 Chọn điểm đích (G)
+            </button>
+          </div>
+
+          <div class="coords">
+            <div>
+              <strong>Xuất phát:</strong>
+              <span id="start-display">Chưa chọn</span>
+            </div>
+            <div>
+              <strong>Đích:</strong> <span id="goal-display">Chưa chọn</span>
+            </div>
+          </div>
+
+          <h2>2. Cập nhật tình trạng ngập</h2>
+          <div class="selection-buttons">
+            <button
+              id="btn-flood"
+              class="mode-btn btn-flood"
+              data-mode="flood"
+              onclick="setSelectionMode('flood')"
+            >
+              ⚠️ Đánh dấu đoạn ngập (Click 2 điểm)
+            </button>
+            <button onclick="clearAllFloods()" class="secondary">
+              🧹 Xóa tất cả điểm ngập
+            </button>
+          </div>
+
+          <h2>3. Thực thi</h2>
+          <label for="algorithm-select">Chọn thuật toán:</label>
+          <select id="algorithm-select">
+            <option value="astar">Thuật toán A* (Tối ưu nhất)</option>
+            <option value="dijkstra">Thuật toán Dijkstra</option>
+            <option value="bfs">BFS (Ngắn nhất theo số bước)</option>
           </select>
-        </label>
 
-        <button id="clearBtn">🧹 Xóa điểm đã chọn</button>
-        <hr />
+          <button
+            id="run-btn"
+            class="primary"
+            style="width: 100%; margin-top: 10px"
+          >
+            🚀 BẮT ĐẦU TÌM ĐƯỜNG
+          </button>
 
-        <h3>Danh sách tuyến ngập</h3>
-        <ul id="blockedList">
-          Chưa có tuyến nào.
-        </ul>
-      </div>
+          <div id="error-box" class="error" role="alert" hidden></div>
+        </section>
 
-      <!-- Bản đồ -->
-      <div id="map"></div>
+        <section>
+          <h2>4. Kết quả lộ trình</h2>
+          <div id="result-panel">
+            Chưa có lộ trình. Hãy chọn các điểm trên bản đồ và nhấn Chạy.
+          </div>
+        </section>
+
+        <div class="graph-summary">
+          <strong>Đồ thị:</strong>
+          <span id="graph-summary">Đang tải dữ liệu...</span>
+        </div>
+        <textarea id="graphml-output" style="display: none"></textarea>
+        <button
+          id="download-graph-btn"
+          class="secondary"
+          style="font-size: 0.8rem; margin-top: 20px"
+        >
+          💾 Tải GraphML
+        </button>
+      </aside>
+
+      <main id="map"></main>
     </div>
 
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""
+    ></script>
+    <script>
+      // Logic đồng bộ UI
+      function updateUIActiveMode(mode) {
+        document.querySelectorAll(".mode-btn").forEach((btn) => {
+          if (btn.getAttribute("data-mode") === mode) {
+            btn.classList.add("active");
+          } else {
+            btn.classList.remove("active");
+          }
+        });
+      }
+
+      // Bọc lại hàm để cập nhật giao diện khi thay đổi chế độ
+      const originalSetMode = window.setSelectionMode;
+      window.setSelectionMode = function (mode) {
+        if (typeof originalSetMode === "function") {
+          originalSetMode(mode);
+        }
+        updateUIActiveMode(mode);
+      };
+
+      // Mặc định chọn chế độ 'start' khi vừa tải trang
+      window.onload = function () {
+        setSelectionMode("start");
+      };
+    </script>
     <script src="{{ url_for('static', filename='script.js') }}"></script>
   </body>
 </html>

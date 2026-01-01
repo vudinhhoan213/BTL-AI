@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Tìm đường đi để cứu hộ- Hạ Đình</title>
+    <title>Tìm đường đi để cứu hộ khu vực Hạ Đình - Thanh Xuân - Hà Nội</title>
 
     <link
       rel="stylesheet"
@@ -20,7 +20,7 @@
   <body>
     <div class="layout">
       <aside class="sidebar">
-        <h1>📍 Tìm đường né điểm ngập</h1>
+        <h1>Tìm đường né điểm ngập</h1>
 
         <section>
           <p class="hint">
@@ -29,7 +29,7 @@
             dấu ngập.
           </p>
           <button id="load-map-btn" class="secondary" style="width: 100%">
-            🔄 Tải lại bản đồ
+            Tải lại bản đồ
           </button>
         </section>
 
@@ -42,7 +42,7 @@
               data-mode="start"
               onclick="setSelectionMode('start')"
             >
-              🟢 Chọn điểm đi (S)
+              Chọn điểm đi (S)
             </button>
             <button
               id="btn-goal"
@@ -50,7 +50,7 @@
               data-mode="goal"
               onclick="setSelectionMode('goal')"
             >
-              🔴 Chọn điểm đích (G)
+              Chọn điểm đích (G)
             </button>
           </div>
 
@@ -72,19 +72,18 @@
               data-mode="flood"
               onclick="setSelectionMode('flood')"
             >
-              ⚠️ Đánh dấu đoạn ngập (Click 2 điểm)
-            </button>
+              Đánh dấu vùng ngập (click nhiều điểm)
             <button onclick="clearAllFloods()" class="secondary">
-              🧹 Xóa tất cả điểm ngập
+              Xóa tất cả điểm ngập
             </button>
           </div>
 
           <h2>3. Thực thi</h2>
           <label for="algorithm-select">Chọn thuật toán:</label>
           <select id="algorithm-select">
-            <option value="astar">Thuật toán A* (Tối ưu nhất)</option>
+            <option value="astar">Thuật toán A*</option>
             <option value="dijkstra">Thuật toán Dijkstra</option>
-            <option value="bfs">BFS (Ngắn nhất theo số bước)</option>
+            <option value="bfs">BFS </option>
           </select>
 
           <button
@@ -92,7 +91,7 @@
             class="primary"
             style="width: 100%; margin-top: 10px"
           >
-            🚀 BẮT ĐẦU TÌM ĐƯỜNG
+            BẮT ĐẦU TÌM ĐƯỜNG
           </button>
 
           <div id="error-box" class="error" role="alert" hidden></div>

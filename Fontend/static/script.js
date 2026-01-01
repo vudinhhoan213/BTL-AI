@@ -13,12 +13,13 @@ let floodPointsTemp = []; // Lưu tạm 2 điểm click để tạo 1 đoạn ng
 let nodeFeatures = []; // Dữ liệu nút giao từ server
 
 // DOM Elements
-const algorithmSelect = document.getElementById("algorithm-select");
-const resultPanel = document.getElementById("result-panel");
-const runBtn = document.getElementById("run-btn");
+const algorithmSelect = document.getElementById("algorithm-select"); // chọn thuật toán
+const resultPanel = document.getElementById("result-panel"); // hiển thị kết quả lộ trình
+const runBtn = document.getElementById("run-btn"); // nút chạy tìm đường
 const loadMapBtn = document.getElementById("load-map-btn");
 const startDisplay = document.getElementById("start-display");
 const goalDisplay = document.getElementById("goal-display");
+const finishFloodBtn = document.getElementById("finish-flood-btn");
 
 // ==========================================
 // 2. Khởi tạo Bản đồ và Các lớp hiển thị
@@ -28,6 +29,7 @@ const map = L.map("map", { preferCanvas: true }).setView(
   INITIAL_ZOOM
 );
 
+// Thêm lớp nền OpenStreetMap
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
   attribution: "&copy; OpenStreetMap contributors",
 }).addTo(map);
@@ -37,8 +39,12 @@ const pathLayer = L.polyline([], {
   weight: 6,
   opacity: 0.9,
 }).addTo(map);
-const nodesLayer = L.layerGroup().addTo(map); // hiển thị các node nhận từ API
-const floodVisualLayers = L.layerGroup().addTo(map);
+
+const nodesLayer = L.layerGroup().addTo(map); // lưu trữ các nút giao
+const floodVisualLayers = L.layerGroup().addTo(map); // lưu trữ các đoạn ngập
+const floodTempLayer = L.layerGroup().addTo(map);
+let floodPreviewCircle = null;
+let floodSubmitPromise = null;
 let markers = { start: null, goal: null };
 
 // ==========================================
@@ -88,48 +94,24 @@ map.on("click", (e) => {
     startLatLng = snapped;
     updateMarker("start", snapped);
     if (startDisplay)
-      startDisplay.textContent = `${snapped.lat.toFixed(
-        5
-      )}, ${snapped.lng.toFixed(5)}`;
+      startDisplay.textContent = `${snapped.lat.toFixed(5)}, ${snapped.lng.toFixed(5)}`;
   } else if (selectionMode === "goal") {
     goalLatLng = snapped;
     updateMarker("goal", snapped);
     if (goalDisplay)
-      goalDisplay.textContent = `${snapped.lat.toFixed(
-        5
-      )}, ${snapped.lng.toFixed(5)}`;
+      goalDisplay.textContent = `${snapped.lat.toFixed(5)}, ${snapped.lng.toFixed(5)}`;
   } else if (selectionMode === "flood") {
-    floodPointsTemp.push([snapped.lat, snapped.lng]);
+    const point = [snapped.lat, snapped.lng];
+    floodPointsTemp.push(point);
 
     L.circleMarker(snapped, {
       radius: 5,
       color: "red",
       fillColor: "red",
       fillOpacity: 1,
-    }).addTo(floodVisualLayers);
+    }).addTo(floodTempLayer);
 
-    if (floodPointsTemp.length === 2) {
-      const newFlood = { start: floodPointsTemp[0], end: floodPointsTemp[1] };
-      blockedEdges.push(newFlood);
-
-      L.polyline(floodPointsTemp, {
-        color: "red",
-        weight: 8,
-        dashArray: "10, 15",
-        opacity: 0.7,
-      })
-        .addTo(floodVisualLayers)
-        .bindTooltip("Đoạn đường ngập");
-
-      // Gửi đoạn ngập lên server ngay lập tức
-      fetch("/api/add_blocked", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(newFlood),
-      });
-
-      floodPointsTemp = [];
-    }
+    updateFloodPreview();
   }
 });
 
@@ -140,6 +122,12 @@ async function runPathfinding() {
   if (!startLatLng || !goalLatLng) {
     alert("Vui lòng chọn Điểm đi và Điểm đến!");
     return;
+  }
+
+  if (floodSubmitPromise) {
+    await floodSubmitPromise;
+  } else if (floodPointsTemp.length >= 2) {
+    await finishFloodArea();
   }
 
   const payload = {
@@ -172,6 +160,8 @@ async function runPathfinding() {
 // ==========================================
 // 6. Các Hàm Hỗ trợ
 // ==========================================
+
+// Tìm nút giao gần nhất với tọa độ đã cho
 function findNearestNode(latlng) {
   if (!nodeFeatures || nodeFeatures.length === 0) return latlng;
   let best = null;
@@ -201,16 +191,123 @@ function updateMarker(type, latlng) {
 }
 
 function showResult(data) {
+  const timeMinutes = data.total_time_sec
+    ? (data.total_time_sec / 60).toFixed(1)
+    : null;
   resultPanel.innerHTML = `
         <div style="padding: 12px; background: #e3f2fd; border-left: 5px solid #1e88e5; border-radius: 4px;">
-            <b>Kết quả:</b> ${(data.total_length_m / 1000).toFixed(2)} km<br>
-            Đã né các đoạn ngập trên bản đồ.
+            <b>Ket qua:</b> ${(data.total_length_m / 1000).toFixed(2)} km<br>
+            ${
+              timeMinutes
+                ? `Thoi gian (30 km/h): ${timeMinutes} phut<br>`
+                : ""
+            }
+            Đã áp dụng các đoạn ngập trên bản đồ.
         </div>`;
 }
 
+function computeCentroid(points) {
+  // Trung bình lat/lng để lấy trọng tâm.
+  let sumLat = 0;
+  let sumLng = 0;
+  points.forEach((p) => {
+    sumLat += p[0];
+    sumLng += p[1];
+  });
+  return L.latLng(sumLat / points.length, sumLng / points.length);
+}
+
+function computeRadiusMeters(center, points) {
+  // Tính bán kính lớn nhất từ tâm đến các điểm.
+  let maxDist = 0;
+  points.forEach((p) => {
+    const dist = center.distanceTo(L.latLng(p[0], p[1]));
+    if (dist > maxDist) maxDist = dist;
+  });
+  return maxDist;
+}
+
+function updateFloodPreview() {
+  // Vẽ vòng tròn cho vùng ngập tạm thời.
+  if (floodPreviewCircle) {
+    floodTempLayer.removeLayer(floodPreviewCircle);
+    floodPreviewCircle = null;
+  }
+  if (floodPointsTemp.length < 2) return;
+  const center = computeCentroid(floodPointsTemp);
+  const radius = computeRadiusMeters(center, floodPointsTemp);
+  floodPreviewCircle = L.circle(center, {
+    color: "red",
+    weight: 2,
+    dashArray: "6, 8",
+    fillColor: "red",
+    fillOpacity: 0.12,
+    radius: radius,
+  }).addTo(floodTempLayer);
+}
+
+async function finishFloodArea() {
+  // Hoàn tất việc chọn vùng ngập và gửi lên server.
+  if (floodSubmitPromise) {
+    return floodSubmitPromise;
+  }
+  if (floodPointsTemp.length < 2) {
+    alert("Vui lòng chọn ít nhất 2 điểm cho vùng ngập.");
+    return;
+  }
+  const points = floodPointsTemp.slice();
+  const center = computeCentroid(points);
+  const radius = computeRadiusMeters(center, points);
+  floodSubmitPromise = (async () => {
+    L.circle(center, {
+      color: "red",
+      weight: 2,
+      fillColor: "red",
+      fillOpacity: 0.2,
+      radius: radius,
+    }).addTo(floodVisualLayers);
+    points.forEach((p) => {
+      L.circleMarker(p, {
+        radius: 5,
+        color: "red",
+        fillColor: "red",
+        fillOpacity: 1,
+      }).addTo(floodVisualLayers);
+    });
+    try {
+      await fetch("/api/add_blocked", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ points: points }),
+      });
+    } catch (err) {
+      console.error("Không gửi được vùng ngập:", err);
+    }
+    floodPointsTemp = [];
+    floodTempLayer.clearLayers();
+    floodPreviewCircle = null;
+    floodSubmitPromise = null;
+  })();
+  return floodSubmitPromise;
+}
+
 window.setSelectionMode = function (mode) {
+  // Tự động hoàn tất vùng ngập nếu chuyển chế độ
+  if (selectionMode === "flood" && mode !== "flood") {
+    if (floodPointsTemp.length >= 2) {
+      finishFloodArea();
+    } else {
+      floodPointsTemp = [];
+      floodTempLayer.clearLayers();
+      floodPreviewCircle = null;
+    }
+  }
+  if (mode === "flood" && selectionMode !== "flood") {
+    floodPointsTemp = [];
+    floodTempLayer.clearLayers();
+    floodPreviewCircle = null;
+  }
   selectionMode = mode;
-  floodPointsTemp = [];
   document.querySelectorAll(".mode-btn").forEach((btn) => {
     btn.classList.toggle("active", btn.getAttribute("data-mode") === mode);
   });
@@ -220,6 +317,9 @@ window.clearAllFloods = async function () {
   await fetch("/api/clear_blocked", { method: "POST" });
   blockedEdges = [];
   floodVisualLayers.clearLayers();
+  floodTempLayer.clearLayers();
+  floodPreviewCircle = null;
+  floodPointsTemp = [];
   pathLayer.setLatLngs([]);
   resultPanel.innerHTML = "Đã xóa toàn bộ điểm ngập.";
 };
@@ -227,5 +327,6 @@ window.clearAllFloods = async function () {
 // Khởi tạo dữ liệu khi tải trang
 loadMapData();
 
+if (finishFloodBtn) finishFloodBtn.onclick = finishFloodArea;
 if (runBtn) runBtn.onclick = runPathfinding;
 if (loadMapBtn) loadMapBtn.onclick = () => location.reload();

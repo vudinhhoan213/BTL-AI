@@ -1,0 +1,74 @@
+# BTL-AI - Huong dan luong hoat dong
+
+## Tong quan
+- Backend: Flask + OSMnx + NetworkX de lay do thi duong, tinh toan duong di.
+- Frontend: Leaflet de hien thi ban do va thao tac chon diem.
+- Tam ban do: khu vuc Ha Dinh, Thanh Xuan, Ha Noi (xem `app.py`).
+
+## Thanh phan chinh
+- `app.py`: khoi tao do thi, xu ly API, chay thuat toan tim duong.
+- `Fontend/templates/index.html`: giao dien chinh, nut chon che do, bang ket qua.
+- `Fontend/static/script.js`: logic thao tac ban do, goi API, ve duong di.
+- `Fontend/static/style.css`: giao dien, mau sac, bo cuc.
+- `cache/`: du lieu cache khi tai OSM (tu dong tao).
+
+## Luong hoat dong chi tiet
+
+### 1) Backend khoi dong va tai do thi
+- Khi chay `app.py`, ung dung goi `ox.graph_from_point` voi `CENTER_POINT`, `DISTANCE` va `NETWORK_TYPE`.
+- Tao 2 do thi:
+  - `G_gps`: giu toa do lat/lng goc de lay ket qua ve cho client.
+  - `G`: do thi da duoc project ve he toa do phang de tinh khoang cach chinh xac.
+- Neu tai do thi thanh cong: `graph_ready = True`. Neu loi: luu `graph_load_error`.
+
+### 2) Client tai trang va nap du lieu nut giao
+- Truy cap `/` -> server render `index.html`.
+- `script.js` khoi tao ban do Leaflet, cac layer (nodes, path, flood).
+- Ham `loadMapData()` goi `POST /api/load`:
+  - Server tra ve danh sach node (id, lat, lng).
+  - Client luu vao `nodeFeatures` de snap diem click vao node gan nhat.
+  - Ve cac node len ban do va cap nhat thong tin tong quan.
+
+### 3) Chon diem bat dau va ket thuc
+- Nguoi dung chon che do `start` hoac `goal`.
+- Click tren ban do:
+  - Client tim node gan nhat (ham `findNearestNode`) va luu `startLatLng`/`goalLatLng`.
+  - Ve marker va cap nhat toa do hien thi.
+
+### 4) Danh dau vung ngap (blocked)
+- Chon che do `flood`, click nhieu diem:
+  - Client tam thoi ve cac diem va vong tron preview (tinh tam + ban kinh).
+- Khi ket thuc (button hoac doi che do):
+  - Client goi `POST /api/add_blocked` voi `points`.
+  - Server tinh vong tron bao phu toi thieu tu tap diem.
+  - Duyet tung canh cua do thi: neu canh giao vong tron -> them vao `blocked_edges`.
+- Truong hop khac: neu gui `start/end` thi server tim duong ngan nhat giua 2 node va danh dau cac canh tren duong do.
+
+### 5) Tim duong (A*, Dijkstra, BFS)
+- Client goi `POST /api/path` voi `start`, `goal`, `algorithm`.
+- Server:
+  - Sao chep do thi: `G_temp = G.copy()`.
+  - Xoa canh bi ngap: `apply_blocked_edges(G_temp, mode="remove")`.
+  - Chay thuat toan:
+    - `astar_path`, `dijkstra_path`, hoac `bfs_path`.
+  - Neu khong tim duong (ValueError), chuyen sang do thi vo huong va thu lai.
+  - Tra ve danh sach toa do lat/lng cho duong di, tong do dai (m), thoi gian (giay).
+
+### 6) Hien thi ket qua
+- Client nhan `data.path`, ve polyline tren ban do, fit view.
+- Hien thi tong do dai va thoi gian (tinh theo `SPEED_KMH`).
+
+### 7) Xoa vung ngap
+- Client goi `POST /api/clear_blocked`.
+- Server xoa `blocked_edges`.
+- UI xoa tat ca layer vung ngap va duong di.
+
+## Luu y cau hinh quan trong
+- `DISTANCE`, `CENTER_POINT`, `NETWORK_TYPE`: pham vi va loai duong tai OSM.
+- `BLOCKED_PENALTY`: he so phat cho canh bi ngap (chi dung neu chon che do penalize).
+- `SPEED_KMH`: toc do gia dinh de tinh thoi gian.
+
+## Cach chay nhanh (tuy chon)
+1) Cai dependency: `flask`, `osmnx`, `networkx`.
+2) Chay server: `python app.py`.
+3) Mo trinh duyet: `http://127.0.0.1:5000`.

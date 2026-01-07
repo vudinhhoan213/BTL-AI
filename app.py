@@ -7,10 +7,10 @@ import networkx as nx
 import osmnx as ox
 
 
-BASE_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = BASE_DIR if (BASE_DIR / "Fontend").exists() else BASE_DIR.parent
-TEMPLATE_DIR = PROJECT_ROOT / "Fontend" / "templates"
-STATIC_DIR = PROJECT_ROOT / "Fontend" / "static"
+BASE_DIR = Path(__file__).resolve().parent                # Lấy đường dẫn thư mục hiện tại của file code
+PROJECT_ROOT = BASE_DIR if (BASE_DIR / "Frontend").exists() else BASE_DIR.parent     # Xác định thư mục gốc dự án
+TEMPLATE_DIR = PROJECT_ROOT / "Frontend" / "templates"         # Đường dẫn chứa các file HTML
+STATIC_DIR = PROJECT_ROOT / "Frontend" / "static"           # Đường dẫn chứa các file tĩnh (CSS, JS, hình ảnh)
 
 app = Flask(
     __name__,
@@ -24,27 +24,31 @@ CENTER_POINT = (20.9875, 105.8123)
 DISTANCE = 3000
 NETWORK_TYPE = "drive"
 
-G = None
-G_gps = None
-blocked_edges = set()
-graph_ready = False
-graph_load_error = None
-BLOCKED_PENALTY = 10000
-SPEED_KMH = 30
+G = None                   # Đồ thị chuyển đổi hệ tọa độ phẳng (m)   
+G_gps = None               # Đồ thị gốc với tọa độ GPS (lat/lng)
+blocked_edges = set()      # Tập hợp các cạnh bị chặn
+graph_ready = False        # trạng thái đồ thị
+graph_load_error = None    # Lỗi tải đồ thị
+BLOCKED_PENALTY = 10000    # Hệ số phạt cho cạnh bị chặn
+SPEED_KMH = 30              # Tốc độ di chuyển mặc định (km/h)
 
 print(f"Tải lại đồ thị tại {LOCATION}...")
 try:
+
+    # Tải đồ thị từ OSMNx quanh Hạ Đình bán kính 3000m
     G = ox.graph_from_point(
         CENTER_POINT,
         dist=DISTANCE,
         network_type=NETWORK_TYPE,
-        simplify=True,
+        simplify=True,                 # Loại bỏ các nút thừa để đơn giản hóa đồ thị
     )
     G_gps = G.copy()
-    # Project graph to planar coordinates for accurate distance calculations
+
+    # Chuyển tọa độ (lat/lng) sang hệ phẳng
     G = ox.project_graph(G)
     graph_ready = True
     print("Đồ thị đã được tải thành công.")
+
 except Exception as e:
     graph_load_error = str(e)
     print(f"Đồ thị tải thất bại: {graph_load_error}")
@@ -106,7 +110,7 @@ def project_relative(center_lat, center_lng, lat, lng):
     # Chuyển tọa độ địa lý sang hệ tọa độ phẳng tương đối với tâm
     meters_per_deg_lat = 111132.92
     meters_per_deg_lng = 111412.84 * math.cos(math.radians(center_lat))
-    x = (lng - center_lng) * meters_per_deg_lng
+    x = (lng - center_lng) * meters_per_deg_lng     
     y = (lat - center_lat) * meters_per_deg_lat
     return x, y
 
@@ -119,7 +123,7 @@ def segment_intersects_circle(center_lat, center_lng, radius_m, lat1, lng1, lat2
     dy = y2 - y1
     if dx == 0 and dy == 0:
         return (x1 * x1 + y1 * y1) <= radius_m * radius_m
-    t = -(x1 * dx + y1 * dy) / (dx * dx + dy * dy)
+    t = -(x1 * dx + y1 * dy) / (dx * dx + dy * dy)          # t = - OA · AB / |AB|^2
     if t < 0:
         t = 0
     elif t > 1:
@@ -131,21 +135,22 @@ def segment_intersects_circle(center_lat, center_lng, radius_m, lat1, lng1, lat2
 
 def edge_in_circle(center_lat, center_lng, radius_m, u, v, data):
     # Kiểm tra nếu cạnh giao với hình tròn.
-    node_u = G_gps.nodes[u]
+    node_u = G_gps.nodes[u]    
     node_v = G_gps.nodes[v]
     points = [(node_u["y"], node_u["x"]), (node_v["y"], node_v["x"])]
-    geom = data.get("geometry")
-    if geom is not None:
+    geom = data.get("geometry")      
+    if geom is not None:        # nếu cạnh có hình học, sử dụng nó để kiểm tra chính xác hơn
         try:
-            points = [(y, x) for x, y in geom.coords]
+            points = [(y, x) for x, y in geom.coords]       
         except Exception:
-            points = [(node_u["y"], node_u["x"]), (node_v["y"], node_v["x"])]
-    for (lat1, lng1), (lat2, lng2) in zip(points[:-1], points[1:]):
+            points = [(node_u["y"], node_u["x"]), (node_v["y"], node_v["x"])]       
+    for (lat1, lng1), (lat2, lng2) in zip(points[:-1], points[1:]):        # Chia đoạn cạnh thành các đoạn thẳng nhỏ
         if segment_intersects_circle(center_lat, center_lng, radius_m, lat1, lng1, lat2, lng2):
             return True
     return False
 
 
+# trả về trang chính
 @app.route("/")
 def index():
     return render_template("index.html")
@@ -166,8 +171,7 @@ def load_map():
                 "lng": data["x"],
             }
         )
-    return jsonify({"nodes": nodes_data, "location": LOCATION})
-
+    return jsonify({"nodes": nodes_data, "location": LOCATION})      # trả về nút để vẽ bản đồ
 
 @app.route("/api/add_blocked", methods=["POST"])
 def add_blocked():
@@ -203,28 +207,6 @@ def add_blocked():
             }
         )
 
-    p1, p2 = data.get("start"), data.get("end")
-    if not p1 or not p2 or len(p1) != 2 or len(p2) != 2:
-        return jsonify({"error": "Both start and end coordinates are required."}), 400
-
-    u = get_nearest_node(p1[0], p1[1])
-    v = get_nearest_node(p2[0], p2[1])
-    if u == v:
-        return jsonify({"status": "error", "message": "Start and end collapse to one node."}), 400
-
-    # Điểm ngắn nhất giữa u và v trên đồ thị
-    try:
-        path = nx.shortest_path(G, u, v, weight="length")
-        for a, b in zip(path[:-1], path[1:]):
-            blocked_edges.add((a, b))
-            blocked_edges.add((b, a))
-    except Exception:
-        blocked_edges.add((u, v))
-        blocked_edges.add((v, u))
-
-    return jsonify({"status": "success"})
-
-
 @app.route("/api/path", methods=["POST"])
 def find_path():
     error_response = ensure_graph_available()
@@ -244,7 +226,7 @@ def find_path():
 
     # Remove flooded edges for all algorithms to avoid conflicts
     G_temp = G.copy()
-    apply_blocked_edges(G_temp, mode="remove")
+    apply_blocked_edges(G_temp)
 
     start_node = get_nearest_node(start_lat, start_lng)
     goal_node = get_nearest_node(goal_lat, goal_lng)
@@ -443,13 +425,13 @@ def apply_blocked_edges(graph, mode="penalize"):
     for u, v in blocked_edges:
         if not graph.has_edge(u, v) and not graph.has_edge(v, u):
             continue
-        if mode == "remove":
-            if graph.has_edge(u, v):
-                for key in list(graph[u][v].keys()):
-                    graph.remove_edge(u, v, key=key)
-            if graph.has_edge(v, u):
-                for key in list(graph[v][u].keys()):
-                    graph.remove_edge(v, u, key=key)
+        # if mode == "remove":
+        #     if graph.has_edge(u, v):
+        #         for key in list(graph[u][v].keys()):
+        #             graph.remove_edge(u, v, key=key)
+        #     if graph.has_edge(v, u):
+        #         for key in list(graph[v][u].keys()):
+        #             graph.remove_edge(v, u, key=key)
         else:  # penalize
             if graph.has_edge(u, v):
                 for key in graph[u][v]:
